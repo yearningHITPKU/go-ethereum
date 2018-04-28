@@ -421,11 +421,11 @@ func (srv *Server) Start() (err error) {
 	)
 
 	if !srv.NoDiscovery || srv.DiscoveryV5 {
-		addr, err := net.ResolveUDPAddr("udp", srv.ListenAddr)
+		addr, err := net.ResolveUDPAddr("udp4", srv.ListenAddr)
 		if err != nil {
 			return err
 		}
-		conn, err = net.ListenUDP("udp", addr)
+		conn, err = net.ListenUDP("udp4", addr)
 		if err != nil {
 			return err
 		}
@@ -508,7 +508,7 @@ func (srv *Server) Start() (err error) {
 
 func (srv *Server) startListening() error {
 	// Launch the TCP listener.
-	listener, err := net.Listen("tcp", srv.ListenAddr)
+	listener, err := net.Listen("tcp4", srv.ListenAddr)
 	if err != nil {
 		return err
 	}
