@@ -967,3 +967,13 @@ func (srv *Server) PeersInfo() []*PeerInfo {
 	}
 	return infos
 }
+
+func (srv *Server) GetDiscoverTable() discoverTable {
+	return srv.ntab
+}
+
+func (srv *Server) GetRandomNodesFromDiscoveryTable(maxNum int) []*discover.Node {
+	buf := make([]*discover.Node, maxNum)
+	n := srv.ntab.ReadRandomNodes(buf)
+	return buf[:n]
+}

@@ -73,6 +73,11 @@ func newNodeDB(path string, version int, self NodeID) (*nodeDB, error) {
 	return newPersistentNodeDB(path, version, self)
 }
 
+
+func NewNodeDB(path string, version int, self NodeID) (*nodeDB, error) {
+	return newNodeDB(path, version, self)
+}
+
 // newMemoryNodeDB creates a new in-memory node database without a persistent
 // backend.
 func newMemoryNodeDB(self NodeID) (*nodeDB, error) {
@@ -345,6 +350,10 @@ seek:
 	return nodes
 }
 
+func (db *nodeDB) QuerySeeds(n int, maxAge time.Duration) []*Node {
+	return db.querySeeds(n, maxAge)
+}
+
 // reads the next node record from the iterator, skipping over other
 // database entries.
 func nextNode(it iterator.Iterator) *Node {
@@ -367,4 +376,8 @@ func nextNode(it iterator.Iterator) *Node {
 func (db *nodeDB) close() {
 	close(db.quit)
 	db.lvl.Close()
+}
+
+func (db *nodeDB) Close() {
+	db.close()
 }
