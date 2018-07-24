@@ -28,10 +28,10 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/crypto/sha3"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/yearningHITPKU/go-ethereum/common"
+	"github.com/yearningHITPKU/go-ethereum/common/math"
+	"github.com/yearningHITPKU/go-ethereum/crypto/sha3"
+	"github.com/yearningHITPKU/go-ethereum/rlp"
 )
 
 var (
