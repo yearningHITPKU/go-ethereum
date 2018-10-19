@@ -112,6 +112,10 @@ type bucket struct {
 	ips          netutil.DistinctNetSet
 }
 
+func (bkt *bucket) GetEntries() []*Node {
+	return bkt.entries
+}
+
 func newTable(t transport, ourID NodeID, ourAddr *net.UDPAddr, nodeDBPath string, bootnodes []*Node) (*Table, error) {
 	// If no node database was given, use an in-memory one
 	db, err := newNodeDB(nodeDBPath, Version, ourID)
@@ -814,6 +818,10 @@ func (tab *Table) bumpOrAdd(b *bucket, n *Node) bool {
 func (tab *Table) deleteInBucket(b *bucket, n *Node) {
 	b.entries = deleteNode(b.entries, n)
 	tab.removeIP(b, n.IP)
+}
+
+func (tab *Table) GetBuckets() []*bucket{
+	return tab.buckets[:]
 }
 
 // pushNode adds n to the front of list, keeping at most max items.
