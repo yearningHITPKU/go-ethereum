@@ -166,9 +166,15 @@ type Server struct {
 	peerOp     chan peerOpFunc
 	peerOpDone chan struct{}
 
-	quit          chan struct{}
-	addstatic     chan *discover.Node
-	removestatic  chan *discover.Node
+	quit             chan struct{}
+	addstatic        chan *discover.Node
+	addprivileged    chan *discover.Node
+	removestatic     chan *discover.Node
+	removeprivileged chan *discover.Node
+	connect          chan struct{
+		node *discover.Node
+		done chan error
+	}
 	posthandshake chan *conn
 	addpeer       chan *conn
 	delpeer       chan peerDrop
@@ -176,6 +182,11 @@ type Server struct {
 	peerFeed      event.Feed
 	log           log.Logger
 }
+
+//type connect struct {
+	//node    *discover.Node
+	//done chan error
+//}
 
 type peerOpFunc func(map[discover.NodeID]*Peer)
 
@@ -192,6 +203,7 @@ const (
 	staticDialedConn
 	inboundConn
 	trustedConn
+	privilegedDialedConn
 )
 
 // conn wraps a network connection with information gathered
@@ -204,12 +216,15 @@ type conn struct {
 	id    discover.NodeID // valid after the encryption handshake
 	caps  []Cap           // valid after the protocol handshake
 	name  string          // valid after the protocol handshake
+
+	isIngoreMaxPeer bool
 }
 
 type transport interface {
 	// The two handshakes.
 	doEncHandshake(prv *ecdsa.PrivateKey, dialDest *discover.Node) (discover.NodeID, error)
 	doProtoHandshake(our *protoHandshake) (*protoHandshake, error)
+	doCheckIgnoreMaxPeer(dialDest *discover.Node, c *conn) (*conn, error)
 	// The MsgReadWriter can only be used after the encryption
 	// handshake has completed. The code uses conn.id to track this
 	// by setting it to a non-nil value after the encryption handshake.
@@ -218,6 +233,13 @@ type transport interface {
 	// the tests. Closing the actual network connection doesn't do
 	// anything in those tests because NsgPipe doesn't use it.
 	close(err error)
+}
+
+//type ignoreMaxPeer interface {
+//}
+
+func (c *conn) Flags() connFlag {
+	return c.flags
 }
 
 func (c *conn) String() string {
@@ -292,10 +314,43 @@ func (srv *Server) AddPeer(node *discover.Node) {
 	}
 }
 
+func (srv *Server) AddPrivileged(node *discover.Node) {
+	select {
+	case srv.addprivileged <- node:
+	case <-srv.quit:
+	}
+}
+
+// Connect connects to the given node but don't maintain the connection
+func (srv *Server) Connect(node *discover.Node) error {
+	fmt.Printf("Debug connTasks: Now connect to %s\n", node.ID)
+	done := make(chan error)
+	select {
+	case srv.connect <- struct {
+		node *discover.Node
+		done chan error
+	}{
+		node,
+		done,
+	}:
+	case <-srv.quit:
+		done <- errors.New("Server quited")
+	}
+	fmt.Printf("Debug connTasks: Connect want to return\n")
+	return <- done
+}
+
 // RemovePeer disconnects from the given node
 func (srv *Server) RemovePeer(node *discover.Node) {
 	select {
 	case srv.removestatic <- node:
+	case <-srv.quit:
+	}
+}
+
+func (srv *Server) RemovePrivileged(node *discover.Node) {
+	select {
+	case srv.removeprivileged <- node:
 	case <-srv.quit:
 	}
 }
@@ -409,9 +464,13 @@ func (srv *Server) Start() (err error) {
 	srv.delpeer = make(chan peerDrop)
 	srv.posthandshake = make(chan *conn)
 	srv.addstatic = make(chan *discover.Node)
+	srv.addprivileged = make(chan *discover.Node)
 	srv.removestatic = make(chan *discover.Node)
 	srv.peerOp = make(chan peerOpFunc)
 	srv.peerOpDone = make(chan struct{})
+	srv.connect = make(chan struct{
+		node *discover.Node
+		done chan error})
 
 	var (
 		conn      *net.UDPConn
@@ -483,6 +542,7 @@ func (srv *Server) Start() (err error) {
 	}
 
 	dynPeers := srv.maxDialedConns()
+	fmt.Println("server.go 486: dynPeers ====> ", dynPeers)
 	dialer := newDialState(srv.StaticNodes, srv.BootstrapNodes, srv.ntab, dynPeers, srv.NetRestrict)
 
 	// handshake
@@ -532,7 +592,11 @@ type dialer interface {
 	newTasks(running int, peers map[discover.NodeID]*Peer, now time.Time) []task
 	taskDone(task, time.Time)
 	addStatic(*discover.Node)
+	addPrivileged(*discover.Node)
 	removeStatic(*discover.Node)
+	removePrivileged(*discover.Node)
+	addConnTask(*discover.Node, chan error)
+	popConnTasks(peers map[discover.NodeID]*Peer) []task
 }
 
 func (srv *Server) run(dialstate dialer) {
@@ -567,6 +631,10 @@ func (srv *Server) run(dialstate dialer) {
 		for ; len(runningTasks) < maxActiveDialTasks && i < len(ts); i++ {
 			t := ts[i]
 			srv.log.Trace("New dial task", "task", t)
+			t_, ok := t.(*dialTask)
+			if ok {
+				fmt.Printf("Debug connTasks: in schedule: done: %v\n", t_.done)
+			}
 			go func() { t.Do(srv); taskdone <- t }()
 			runningTasks = append(runningTasks, t)
 		}
@@ -578,6 +646,14 @@ func (srv *Server) run(dialstate dialer) {
 		// Query dialer for new tasks and start as many as possible now.
 		if len(runningTasks) < maxActiveDialTasks {
 			nt := dialstate.newTasks(len(runningTasks)+len(queuedTasks), peers, time.Now())
+			popTasks := dialstate.popConnTasks(peers)
+			for _, ts := range popTasks{
+				ts_, ok := ts.(*dialTask)
+				if ok {
+					fmt.Printf("Debug connTasks: in schedule: done: %v \n", ts_.done)
+				}
+				nt = append(nt, ts)
+			}
 			queuedTasks = append(queuedTasks, startTasks(nt)...)
 		}
 	}
@@ -586,17 +662,33 @@ running:
 	for {
 		scheduleTasks()
 
+		fmt.Printf("Debug connTasks: loop\n")
+
 		select {
 		case <-srv.quit:
+			fmt.Printf("Debug connTasks: quit\n")
+
 			// The server was stopped. Run the cleanup logic.
 			break running
 		case n := <-srv.addstatic:
+			fmt.Printf("Debug connTasks: addstatic===============>%v\n", n)
+
 			// This channel is used by AddPeer to add to the
 			// ephemeral static peer list. Add it to the dialer,
 			// it will keep the node connected.
 			srv.log.Debug("Adding static node", "node", n)
 			dialstate.addStatic(n)
+		case c := <-srv.connect:
+			fmt.Printf("Debug connTasks: connect=================>%v\n", c)
+
+			// This channel is used by AddPeer to add to the
+			// ephemeral static peer list. Add it to the dialer,
+			// it will keep the node connected.
+			srv.log.Debug("Adding node to connection tasks", "node", c)
+			dialstate.addConnTask(c.node, c.done)
 		case n := <-srv.removestatic:
+			fmt.Printf("Debug connTasks: removestatic============>%v\n", n)
+
 			// This channel is used by RemovePeer to send a
 			// disconnect request to a peer and begin the
 			// stop keeping the node connected
@@ -605,11 +697,26 @@ running:
 			if p, ok := peers[n.ID]; ok {
 				p.Disconnect(DiscRequested)
 			}
+		case n := <-srv.removeprivileged:
+			fmt.Printf("Debug connTasks: removeprivileged\n")
+
+			// This channel is used by RemovePeer to send a
+			// disconnect request to a peer and begin the
+			// stop keeping the node connected
+			srv.log.Debug("Removing privileged node", "node", n)
+			dialstate.removePrivileged(n)
+			if p, ok := peers[n.ID]; ok {
+				p.Disconnect(DiscRequested)
+			}
 		case op := <-srv.peerOp:
+			fmt.Printf("Debug connTasks: peerOp=================>%v\n", op)
+
 			// This channel is used by Peers and PeerCount.
 			op(peers)
 			srv.peerOpDone <- struct{}{}
 		case t := <-taskdone:
+			fmt.Printf("Debug connTasks: taskdone===============>%v\n", t)
+
 			// A task got done. Tell dialstate about it so it
 			// can update its state and remove it from the active
 			// tasks list.
@@ -617,6 +724,8 @@ running:
 			dialstate.taskDone(t, time.Now())
 			delTask(t)
 		case c := <-srv.posthandshake:
+			fmt.Printf("Debug connTasks: posthandshake==========>%v\n", c)
+
 			// A connection has passed the encryption handshake so
 			// the remote identity is known (but hasn't been verified yet).
 			if trusted[c.id] {
@@ -630,6 +739,8 @@ running:
 				break running
 			}
 		case c := <-srv.addpeer:
+			fmt.Printf("Debug connTasks: addpeer================>%v\n", c)
+
 			// At this point the connection is past the protocol handshake.
 			// Its capabilities are known and the remote identity is verified.
 			err := srv.protoHandshakeChecks(peers, inboundCount, c)
@@ -658,6 +769,8 @@ running:
 				break running
 			}
 		case pd := <-srv.delpeer:
+			fmt.Printf("Debug connTasks: delpeer===============>%v\n", pd)
+
 			// A peer disconnected.
 			d := common.PrettyDuration(mclock.Now() - pd.created)
 			pd.log.Debug("Removing p2p peer", "duration", d, "peers", len(peers)-1, "req", pd.requested, "err", pd.err)
@@ -703,9 +816,9 @@ func (srv *Server) protoHandshakeChecks(peers map[discover.NodeID]*Peer, inbound
 
 func (srv *Server) encHandshakeChecks(peers map[discover.NodeID]*Peer, inboundCount int, c *conn) error {
 	switch {
-	case !c.is(trustedConn|staticDialedConn) && len(peers) >= srv.MaxPeers:
+	case !c.is(trustedConn|staticDialedConn|privilegedDialedConn) && len(peers) >= srv.MaxPeers:
 		return DiscTooManyPeers
-	case !c.is(trustedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns():
+	case !c.is(trustedConn|privilegedDialedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns():
 		return DiscTooManyPeers
 	case peers[c.id] != nil:
 		return DiscAlreadyConnected
@@ -738,6 +851,7 @@ type tempError interface {
 // listenLoop runs in its own goroutine and accepts
 // inbound connections.
 func (srv *Server) listenLoop() {
+	fmt.Println("\n---------------------------------------start listenLoop-------------------------------------------")
 	defer srv.loopWG.Done()
 	srv.log.Info("RLPx listener up", "self", srv.makeSelf(srv.listener, srv.ntab))
 
@@ -759,7 +873,9 @@ func (srv *Server) listenLoop() {
 			err error
 		)
 		for {
+			fmt.Println("listenLoop before Accept")
 			fd, err = srv.listener.Accept()
+			fmt.Println("listenLoop after Accept")
 			if tempErr, ok := err.(tempError); ok && tempErr.Temporary() {
 				srv.log.Debug("Temporary read error", "err", err)
 				continue
@@ -767,6 +883,7 @@ func (srv *Server) listenLoop() {
 				srv.log.Debug("Read error", "err", err)
 				return
 			}
+			fmt.Printf("listenLoop:  %v", fd)
 			break
 		}
 
@@ -803,6 +920,7 @@ func (srv *Server) SetupConn(fd net.Conn, flags connFlag, dialDest *discover.Nod
 		c.close(err)
 		srv.log.Trace("Setting up connection failed", "id", c.id, "err", err)
 	}
+	fmt.Printf("SetupConn 853: %d err = %v\n", c.flags, err)
 	return err
 }
 
@@ -826,6 +944,13 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *discover.Node) e
 		clog.Trace("Dialed identity mismatch", "want", c, dialDest.ID)
 		return DiscUnexpectedIdentity
 	}
+
+	// decide whether to ignore maxPeers
+	if c, err = c.doCheckIgnoreMaxPeer(dialDest, c); err != nil {
+		srv.log.Trace("Failed check whether to ignore maxPeers", "addr", c.fd.RemoteAddr(), "conn", c.flags, "err", err)
+		return err
+	}
+
 	err = srv.checkpoint(c, srv.posthandshake)
 	if err != nil {
 		clog.Trace("Rejected peer before protocol handshake", "err", err)

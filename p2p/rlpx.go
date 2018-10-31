@@ -35,13 +35,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/yearningHITPKU/go-ethereum/crypto"
 	"github.com/yearningHITPKU/go-ethereum/crypto/ecies"
 	"github.com/yearningHITPKU/go-ethereum/crypto/secp256k1"
 	"github.com/yearningHITPKU/go-ethereum/crypto/sha3"
 	"github.com/yearningHITPKU/go-ethereum/p2p/discover"
 	"github.com/yearningHITPKU/go-ethereum/rlp"
-	"github.com/golang/snappy"
 )
 
 const (
@@ -169,6 +169,57 @@ func readProtocolHandshake(rw MsgReader, our *protoHandshake) (*protoHandshake, 
 		return nil, DiscInvalidIdentity
 	}
 	return &hs, nil
+}
+
+// doCheckIgnoreMaxPeer decide whether to ignore maxPeers
+func (t *rlpx) doCheckIgnoreMaxPeer(dial *discover.Node, c *conn) (*conn, error) {
+	werr := make(chan error, 1)
+	// inbound connection
+	if dial == nil {
+		return readCheckIgnoreMaxPeer(c, t.rw)
+	} else {
+		// dial connection
+		if c.flags == privilegedDialedConn {
+			fmt.Printf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
+			go func() { werr <- Send(t.rw, isIgnoreMaxPeer, true) }()
+		} else {
+			fmt.Printf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
+			go func() { werr <- Send(t.rw, isIgnoreMaxPeer, false) }()
+		}
+		if err := <-werr; err != nil {
+			return nil, fmt.Errorf("write error: %v", err)
+		}
+		return c, nil
+	}
+}
+
+func readCheckIgnoreMaxPeer(c *conn, rw MsgReader) (*conn, error) {
+	// read message from remote peer
+	msg, err := rw.ReadMsg()
+	if err != nil {
+		return c, err
+	}
+	if msg.Code == discMsg {
+		// Disconnect before protocol handshake is valid according to the
+		// spec and we send it ourself if the posthanshake checks fail.
+		// We can't return the reason directly, though, because it is echoed
+		// back otherwise. Wrap it in a string instead.
+		var reason [1]DiscReason
+		rlp.Decode(msg.Payload, &reason)
+		return c, reason[0]
+	}
+	if msg.Code != isIgnoreMaxPeer {
+		return c, fmt.Errorf("expected handshake, got %x", msg.Code)
+	}
+	var imp bool
+	if err := msg.Decode(&imp); err != nil {
+		return c, err
+	}
+	fmt.Printf("return in readCheckIgnoreMaxPeer: imp == %v , c.id = %v\n", imp, c.id)
+	if imp {
+		c.flags = privilegedDialedConn
+	}
+	return c, nil
 }
 
 // doEncHandshake runs the protocol handshake using authenticated
