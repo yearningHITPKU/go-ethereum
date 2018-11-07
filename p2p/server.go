@@ -349,10 +349,9 @@ func (srv *Server) RemovePeer(node *discover.Node) {
 	}
 }
 
-func (srv *Server) DisconnectPeer(nodeID string) {
-	id, _ := discover.HexID(nodeID)
+func (srv *Server) DisconnectPeer(nodeID discover.NodeID) {
 	node := &discover.Node{
-		ID: id,
+		ID: nodeID,
 	}
 	select {
 	case srv.removeprivileged <- node:
