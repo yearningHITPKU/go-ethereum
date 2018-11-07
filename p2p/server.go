@@ -325,7 +325,16 @@ func (srv *Server) AddPrivileged(node *discover.Node) {
 // Connect connects to the given node but don't maintain the connection
 func (srv *Server) Connect(node *discover.Node) error {
 	fmt.Printf("Debug connTasks: Now connect to %s\n", node.ID)
+
+	peers := srv.Peers()
+	for _, p := range peers {
+		if p.ID() == node.ID {
+			return nil
+		}
+	}
+
 	done := make(chan error)
+
 	select {
 	case srv.connect <- struct {
 		node *discover.Node
@@ -693,14 +702,8 @@ running:
 			dialstate.addStatic(n)
 		case c := <-srv.connect:
 			fmt.Printf("Debug connTasks: connect=================>%v\n", c)
-			if _, ok := peers[c.node.ID]; ok {
-				srv.log.Debug("Node is already connectted, no need to reconnect ", "node", c)
-				c.done <- errors.New("Node is already connectted, no need to reconnect")
-				break
-			} else {
-				srv.log.Debug("Adding node to connection tasks", "node", c)
-				dialstate.addConnTask(c.node, c.done)
-			}
+			srv.log.Debug("Adding node to connection tasks", "node", c)
+			dialstate.addConnTask(c.node, c.done)
 		case n := <-srv.removestatic:
 			fmt.Printf("Debug connTasks: removestatic============>%v\n", n)
 
