@@ -217,7 +217,7 @@ func readCheckIgnoreMaxPeer(c *conn, rw MsgReader) (*conn, error) {
 	}
 	fmt.Printf("return in readCheckIgnoreMaxPeer: imp == %v , c.id = %v\n", imp, c.id)
 	if imp {
-		c.flags = privilegedDialedConn
+		c.flags = inboundPrivilegedDialedConn
 	}
 	return c, nil
 }

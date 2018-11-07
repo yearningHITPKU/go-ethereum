@@ -171,7 +171,7 @@ type Server struct {
 	addprivileged    chan *discover.Node
 	removestatic     chan *discover.Node
 	removeprivileged chan *discover.Node
-	connect          chan struct{
+	connect          chan struct {
 		node *discover.Node
 		done chan error
 	}
@@ -184,8 +184,8 @@ type Server struct {
 }
 
 //type connect struct {
-	//node    *discover.Node
-	//done chan error
+//node    *discover.Node
+//done chan error
 //}
 
 type peerOpFunc func(map[discover.NodeID]*Peer)
@@ -204,6 +204,7 @@ const (
 	inboundConn
 	trustedConn
 	privilegedDialedConn
+	inboundPrivilegedDialedConn
 )
 
 // conn wraps a network connection with information gathered
@@ -217,7 +218,7 @@ type conn struct {
 	caps  []Cap           // valid after the protocol handshake
 	name  string          // valid after the protocol handshake
 
-	isIngoreMaxPeer bool
+	//isIngoreMaxPeer bool
 }
 
 type transport interface {
@@ -337,7 +338,7 @@ func (srv *Server) Connect(node *discover.Node) error {
 		done <- errors.New("Server quited")
 	}
 	fmt.Printf("Debug connTasks: Connect want to return\n")
-	return <- done
+	return <-done
 }
 
 // RemovePeer disconnects from the given node
@@ -468,9 +469,10 @@ func (srv *Server) Start() (err error) {
 	srv.removestatic = make(chan *discover.Node)
 	srv.peerOp = make(chan peerOpFunc)
 	srv.peerOpDone = make(chan struct{})
-	srv.connect = make(chan struct{
+	srv.connect = make(chan struct {
 		node *discover.Node
-		done chan error})
+		done chan error
+	})
 
 	var (
 		conn      *net.UDPConn
@@ -647,7 +649,7 @@ func (srv *Server) run(dialstate dialer) {
 		if len(runningTasks) < maxActiveDialTasks {
 			nt := dialstate.newTasks(len(runningTasks)+len(queuedTasks), peers, time.Now())
 			popTasks := dialstate.popConnTasks(peers)
-			for _, ts := range popTasks{
+			for _, ts := range popTasks {
 				ts_, ok := ts.(*dialTask)
 				if ok {
 					fmt.Printf("Debug connTasks: in schedule: done: %v \n", ts_.done)
@@ -680,12 +682,14 @@ running:
 			dialstate.addStatic(n)
 		case c := <-srv.connect:
 			fmt.Printf("Debug connTasks: connect=================>%v\n", c)
-
-			// This channel is used by AddPeer to add to the
-			// ephemeral static peer list. Add it to the dialer,
-			// it will keep the node connected.
-			srv.log.Debug("Adding node to connection tasks", "node", c)
-			dialstate.addConnTask(c.node, c.done)
+			if _, ok := peers[c.node.ID]; ok {
+				srv.log.Debug("Node is already connectted, no need to reconnect ", "node", c)
+				c.done <- errors.New("Node is already connectted, no need to reconnect")
+				break
+			} else {
+				srv.log.Debug("Adding node to connection tasks", "node", c)
+				dialstate.addConnTask(c.node, c.done)
+			}
 		case n := <-srv.removestatic:
 			fmt.Printf("Debug connTasks: removestatic============>%v\n", n)
 
@@ -816,9 +820,9 @@ func (srv *Server) protoHandshakeChecks(peers map[discover.NodeID]*Peer, inbound
 
 func (srv *Server) encHandshakeChecks(peers map[discover.NodeID]*Peer, inboundCount int, c *conn) error {
 	switch {
-	case !c.is(trustedConn|staticDialedConn|privilegedDialedConn) && len(peers) >= srv.MaxPeers:
+	case !c.is(trustedConn|staticDialedConn|privilegedDialedConn|inboundPrivilegedDialedConn) && len(peers) >= srv.MaxPeers:
 		return DiscTooManyPeers
-	case !c.is(trustedConn|privilegedDialedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns():
+	case !c.is(trustedConn|privilegedDialedConn|inboundPrivilegedDialedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns():
 		return DiscTooManyPeers
 	case peers[c.id] != nil:
 		return DiscAlreadyConnected
@@ -873,9 +877,7 @@ func (srv *Server) listenLoop() {
 			err error
 		)
 		for {
-			fmt.Println("listenLoop before Accept")
 			fd, err = srv.listener.Accept()
-			fmt.Println("listenLoop after Accept")
 			if tempErr, ok := err.(tempError); ok && tempErr.Temporary() {
 				srv.log.Debug("Temporary read error", "err", err)
 				continue
@@ -883,7 +885,6 @@ func (srv *Server) listenLoop() {
 				srv.log.Debug("Read error", "err", err)
 				return
 			}
-			fmt.Printf("listenLoop:  %v", fd)
 			break
 		}
 

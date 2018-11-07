@@ -119,6 +119,14 @@ func NewPeer(id discover.NodeID, name string, caps []Cap) *Peer {
 	return peer
 }
 
+func (p *Peer) IsPriDialedConn() bool {
+	return 	p.rw.is(privilegedDialedConn)
+}
+
+func (p *Peer) IsInboundPriDialedConn() bool {
+	return 	p.rw.is(inboundPrivilegedDialedConn)
+}
+
 // ID returns the node's public key.
 func (p *Peer) ID() discover.NodeID {
 	return p.rw.id

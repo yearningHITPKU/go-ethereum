@@ -158,17 +158,25 @@ type conn interface {
 
 // udp implements the RPC protocol.
 type udp struct {
+	//底层监听端口的连接
 	conn        conn
 	netrestrict *netutil.Netlist
 	priv        *ecdsa.PrivateKey
 	ourEndpoint rpcEndpoint
 
+	// udp用来接收pending的channel。
+	// 使用场景为：当我们向其他节点发送数据包后(packet)后可能会期待收到它的回复，pending用来记录一次这种还没有到来的回复。
+	// 举个例子，当我们发送ping包时，总是期待对方回复pong包。这时就可以将构造一个pending结构，其中包含期待接收的pong包的信息以及对应的callback函数，将这个pengding投递到udp的这个channel。
+	// udp在收到匹配的pong后，执行预设的callback。
 	addpending chan *pending
+
+	// udp用来接收其他节点回复的通道，配合上面的addpending，收到回复后，遍历已有的pending链表，看是否有匹配的pending。
 	gotreply   chan reply
 
 	closing chan struct{}
 	nat     nat.Interface
 
+	// 和Server中的ntab是同一个Table
 	*Table
 }
 
@@ -259,7 +267,12 @@ func newUDP(c conn, cfg Config) (*Table, *udp, error) {
 	}
 	udp.Table = tab
 
+	// udp的处理循环，负责控制消息的向上递交和收发控制
+	// addpending 接收其他线程投递来的pending需求
+	// gotreply 接收udp.readLoop()投递过来的pending的回复
 	go udp.loop()
+	// udp的底层接受数据包循环，负责接收其他节点的packet
+	// 接受其他节点发送的packet并解析，如果是回复包则投递到udp.loop()
 	go udp.readLoop(cfg.Unhandled)
 	return udp.Table, udp, nil
 }
