@@ -349,12 +349,23 @@ func (srv *Server) RemovePeer(node *discover.Node) {
 	}
 }
 
-func (srv *Server) RemovePrivileged(node *discover.Node) {
+func (srv *Server) DisconnectPeer(nodeID string) {
+	id, _ := discover.HexID(nodeID)
+	node := &discover.Node{
+		ID: id,
+	}
 	select {
 	case srv.removeprivileged <- node:
 	case <-srv.quit:
 	}
 }
+
+//func (srv *Server) RemovePrivileged(node *discover.Node) {
+//	select {
+//	case srv.removeprivileged <- node:
+//	case <-srv.quit:
+//	}
+//}
 
 // SubscribePeers subscribes the given channel to peer events
 func (srv *Server) SubscribeEvents(ch chan *PeerEvent) event.Subscription {
@@ -467,6 +478,7 @@ func (srv *Server) Start() (err error) {
 	srv.addstatic = make(chan *discover.Node)
 	srv.addprivileged = make(chan *discover.Node)
 	srv.removestatic = make(chan *discover.Node)
+	srv.removeprivileged = make(chan *discover.Node)
 	srv.peerOp = make(chan peerOpFunc)
 	srv.peerOpDone = make(chan struct{})
 	srv.connect = make(chan struct {
@@ -707,7 +719,7 @@ running:
 			// This channel is used by RemovePeer to send a
 			// disconnect request to a peer and begin the
 			// stop keeping the node connected
-			srv.log.Debug("Removing privileged node", "node", n)
+			srv.log.Debug("Disconnect privileged node", "node", n)
 			dialstate.removePrivileged(n)
 			if p, ok := peers[n.ID]; ok {
 				p.Disconnect(DiscRequested)
