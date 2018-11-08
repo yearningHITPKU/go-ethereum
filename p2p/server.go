@@ -327,7 +327,7 @@ func (srv *Server) Connect(nodeID discover.NodeID) error {
 	node := &discover.Node{
 		ID: nodeID,
 	}
-	fmt.Printf("Debug connTasks: Now connect to %s\n", node.ID)
+	debugf("Debug connTasks: Now connect to %s\n", node.ID)
 
 	peers := srv.Peers()
 	for _, p := range peers {
@@ -349,7 +349,7 @@ func (srv *Server) Connect(nodeID discover.NodeID) error {
 	case <-srv.quit:
 		done <- errors.New("Server quited")
 	}
-	fmt.Printf("Debug connTasks: Connect want to return\n")
+	debugf("Debug connTasks: Connect want to return\n")
 	return <-done
 }
 
@@ -567,7 +567,7 @@ func (srv *Server) Start() (err error) {
 	}
 
 	dynPeers := srv.maxDialedConns()
-	fmt.Println("server.go 486: dynPeers ====> ", dynPeers)
+	debugln("server.go 486: dynPeers ====> ", dynPeers)
 	dialer := newDialState(srv.StaticNodes, srv.BootstrapNodes, srv.ntab, dynPeers, srv.NetRestrict)
 
 	// handshake
@@ -658,7 +658,7 @@ func (srv *Server) run(dialstate dialer) {
 			srv.log.Trace("New dial task", "task", t)
 			t_, ok := t.(*dialTask)
 			if ok {
-				fmt.Printf("Debug connTasks: in schedule: done: %v\n", t_.done)
+				debugf("Debug connTasks: in schedule: done: %v\n", t_.done)
 			}
 			go func() { t.Do(srv); taskdone <- t }()
 			runningTasks = append(runningTasks, t)
@@ -675,7 +675,7 @@ func (srv *Server) run(dialstate dialer) {
 			for _, ts := range popTasks {
 				ts_, ok := ts.(*dialTask)
 				if ok {
-					fmt.Printf("Debug connTasks: in schedule: done: %v \n", ts_.done)
+					debugf("Debug connTasks: in schedule: done: %v \n", ts_.done)
 				}
 				nt = append(nt, ts)
 			}
@@ -687,16 +687,16 @@ running:
 	for {
 		scheduleTasks()
 
-		fmt.Printf("Debug connTasks: loop\n")
+		debugf("Debug connTasks: loop\n")
 
 		select {
 		case <-srv.quit:
-			fmt.Printf("Debug connTasks: quit\n")
+			debugf("Debug connTasks: quit\n")
 
 			// The server was stopped. Run the cleanup logic.
 			break running
 		case n := <-srv.addstatic:
-			fmt.Printf("Debug connTasks: addstatic===============>%v\n", n)
+			debugf("Debug connTasks: addstatic===============>%v\n", n)
 
 			// This channel is used by AddPeer to add to the
 			// ephemeral static peer list. Add it to the dialer,
@@ -704,11 +704,11 @@ running:
 			srv.log.Debug("Adding static node", "node", n)
 			dialstate.addStatic(n)
 		case c := <-srv.connect:
-			fmt.Printf("Debug connTasks: connect=================>%v\n", c)
+			debugf("Debug connTasks: connect=================>%v\n", c)
 			srv.log.Debug("Adding node to connection tasks", "node", c)
 			dialstate.addConnTask(c.node, c.done)
 		case n := <-srv.removestatic:
-			fmt.Printf("Debug connTasks: removestatic============>%v\n", n)
+			debugf("Debug connTasks: removestatic============>%v\n", n)
 
 			// This channel is used by RemovePeer to send a
 			// disconnect request to a peer and begin the
@@ -719,7 +719,7 @@ running:
 				p.Disconnect(DiscRequested)
 			}
 		case n := <-srv.removeprivileged:
-			fmt.Printf("Debug connTasks: removeprivileged\n")
+			debugf("Debug connTasks: removeprivileged\n")
 
 			// This channel is used by RemovePeer to send a
 			// disconnect request to a peer and begin the
@@ -730,13 +730,13 @@ running:
 				p.Disconnect(DiscRequested)
 			}
 		case op := <-srv.peerOp:
-			fmt.Printf("Debug connTasks: peerOp=================>%v\n", op)
+			debugf("Debug connTasks: peerOp=================>%v\n", op)
 
 			// This channel is used by Peers and PeerCount.
 			op(peers)
 			srv.peerOpDone <- struct{}{}
 		case t := <-taskdone:
-			fmt.Printf("Debug connTasks: taskdone===============>%v\n", t)
+			debugf("Debug connTasks: taskdone===============>%v\n", t)
 
 			// A task got done. Tell dialstate about it so it
 			// can update its state and remove it from the active
@@ -745,7 +745,7 @@ running:
 			dialstate.taskDone(t, time.Now())
 			delTask(t)
 		case c := <-srv.posthandshake:
-			fmt.Printf("Debug connTasks: posthandshake==========>%v\n", c)
+			debugf("Debug connTasks: posthandshake==========>%v\n", c)
 
 			// A connection has passed the encryption handshake so
 			// the remote identity is known (but hasn't been verified yet).
@@ -760,7 +760,7 @@ running:
 				break running
 			}
 		case c := <-srv.addpeer:
-			fmt.Printf("Debug connTasks: addpeer================>%v\n", c)
+			debugf("Debug connTasks: addpeer================>%v\n", c)
 
 			// At this point the connection is past the protocol handshake.
 			// Its capabilities are known and the remote identity is verified.
@@ -790,7 +790,7 @@ running:
 				break running
 			}
 		case pd := <-srv.delpeer:
-			fmt.Printf("Debug connTasks: delpeer===============>%v\n", pd)
+			debugf("Debug connTasks: delpeer===============>%v\n", pd)
 
 			// A peer disconnected.
 			d := common.PrettyDuration(mclock.Now() - pd.created)
@@ -872,7 +872,7 @@ type tempError interface {
 // listenLoop runs in its own goroutine and accepts
 // inbound connections.
 func (srv *Server) listenLoop() {
-	fmt.Println("\n---------------------------------------start listenLoop-------------------------------------------")
+	debugln("\n---------------------------------------start listenLoop-------------------------------------------")
 	defer srv.loopWG.Done()
 	srv.log.Info("RLPx listener up", "self", srv.makeSelf(srv.listener, srv.ntab))
 
@@ -938,7 +938,7 @@ func (srv *Server) SetupConn(fd net.Conn, flags connFlag, dialDest *discover.Nod
 		c.close(err)
 		srv.log.Trace("Setting up connection failed", "id", c.id, "err", err)
 	}
-	fmt.Printf("SetupConn 853: %d err = %v\n", c.flags, err)
+	debugf("SetupConn 853: %d err = %v\n", c.flags, err)
 	return err
 }
 

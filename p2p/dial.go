@@ -167,8 +167,8 @@ func (s *dialstate) addConnTask(n *discover.Node, done chan error) {
 	// This overwites the task instead of updating an existing
 	// entry, giving users the opportunity to force a resolve operation.
 	s.connTasks = append(s.connTasks, &dialTask{flags: privilegedDialedConn, dest: n, done: done})
-	fmt.Printf("Debug connTasks: s.connTasks after addConnTask %v\n", s.connTasks)
-	fmt.Printf("Debug connTasks: done: %v\n", done)
+	debugf("Debug connTasks: s.connTasks after addConnTask %v\n", s.connTasks)
+	debugf("Debug connTasks: done: %v\n", done)
 }
 
 func (s *dialstate) removeStatic(n *discover.Node) {
@@ -188,21 +188,21 @@ func (s *dialstate) removePrivileged(n *discover.Node) {
 }
 
 func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now time.Time) []task {
-	fmt.Println("\n---------------------------------------newTasks start-------------------------------------------")
+	debugln("\n---------------------------------------newTasks start-------------------------------------------")
 	if s.start.IsZero() {
 		s.start = now
 	}
 
 	var newtasks []task
 	addDial := func(flag connFlag, n *discover.Node) bool {
-		fmt.Printf("addDial discover.Node: %v | flag = %d\n", n, flag)
+		debugf("addDial discover.Node: %v | flag = %d\n", n, flag)
 		if err := s.checkDial(n, peers); err != nil {
 			log.Trace("Skipping dial candidate", "id", n.ID, "addr", &net.TCPAddr{IP: n.IP, Port: int(n.TCP)}, "err", err)
 			return false
 		}
 		s.dialing[n.ID] = flag
 		newtasks = append(newtasks, &dialTask{flags: flag, dest: n})
-		fmt.Println("addDial newtasks: ", newtasks)
+		debugln("addDial newtasks: ", newtasks)
 		return true
 	}
 
@@ -223,20 +223,20 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 	s.hist.expire(now)
 
 	allDial := make(map[discover.NodeID]*dialTask)
-	fmt.Println("s.static    ======>", len(s.static))
+	debugln("s.static    ======>", len(s.static))
 	for k, v := range s.static {
-		//fmt.Printf("s.static k = %v | v = %d\n", k, v.flags)
+		//debugf("s.static k = %v | v = %d\n", k, v.flags)
 		allDial[k] = v
 	}
-	fmt.Println("s.privileged======>", len(s.privileged))
+	debugln("s.privileged======>", len(s.privileged))
 	for k, v := range s.privileged {
-		//fmt.Printf("s.privileged k = %v | v = %d\n", k, v.flags)
+		//debugf("s.privileged k = %v | v = %d\n", k, v.flags)
 		allDial[k] = v
 	}
 
 	// Create dials for static nodes if they are not connected.
 	/*	for id, t := range s.static {
-		fmt.Println("range s.static: ", t.dest)
+		debugln("range s.static: ", t.dest)
 		err := s.checkDial(t.dest, peers)
 		switch err {
 		case errNotWhitelisted, errSelf:
@@ -248,7 +248,7 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		}
 	}*/
 	for id, t := range allDial {
-		fmt.Printf("range allDial: t.dest = %v, t.flags = %d\n", t.dest, t.flags)
+		debugf("range allDial: t.dest = %v, t.flags = %d\n", t.dest, t.flags)
 		err := s.checkDial(t.dest, peers)
 		switch err {
 		case errNotWhitelisted, errSelf:
@@ -263,14 +263,14 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 	// If we don't have any peers whatsoever, try to dial a random bootnode. This
 	// scenario is useful for the testnet (and private networks) where the discovery
 	// table might be full of mostly bad peers, making it hard to find good ones.
-	//fmt.Println("len(peers):                          ", len(peers))
-	//fmt.Println("len(s.bootnodes):                    ", len(s.bootnodes))
-	fmt.Println("needDynDials:      ", needDynDials)
-	//fmt.Println("now.Sub(s.start) > fallbackInterval: ", now.Sub(s.start) > fallbackInterval)
+	//debugln("len(peers):                          ", len(peers))
+	//debugln("len(s.bootnodes):                    ", len(s.bootnodes))
+	debugln("needDynDials:      ", needDynDials)
+	//debugln("now.Sub(s.start) > fallbackInterval: ", now.Sub(s.start) > fallbackInterval)
 	if len(peers) == 0 && len(s.bootnodes) > 0 && needDynDials > 0 && now.Sub(s.start) > fallbackInterval {
-		fmt.Println("dial.go before bootnodes: ", newtasks)
+		debugln("dial.go before bootnodes: ", newtasks)
 		bootnode := s.bootnodes[0]
-		fmt.Println("dial.go bootnodeeeeeeeeeee: ", bootnode)
+		debugln("dial.go bootnodeeeeeeeeeee: ", bootnode)
 		s.bootnodes = append(s.bootnodes[:0], s.bootnodes[1:]...)
 		s.bootnodes = append(s.bootnodes, bootnode)
 
@@ -314,8 +314,8 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		t := &waitExpireTask{s.hist.min().exp.Sub(now)}
 		newtasks = append(newtasks, t)
 	}
-	fmt.Println("return newTasks: ", newtasks)
-	fmt.Println("---------------------------------------newTasks return-------------------------------------------")
+	debugln("return newTasks: ", newtasks)
+	debugln("---------------------------------------newTasks return-------------------------------------------")
 	return newtasks
 }
 
@@ -324,26 +324,26 @@ func (s *dialstate) popConnTasks(peers map[discover.NodeID]*Peer) []task {
 		s.connTasks = []*dialTask{}
 	}()
 	var newtasks []task
-	fmt.Printf("popConnTasks: before range connTasks: s.connTasks = %v\n", s.connTasks)
+	debugf("popConnTasks: before range connTasks: s.connTasks = %v\n", s.connTasks)
 	for _, t := range s.connTasks {
-		fmt.Printf("range connTasks: t.dest = %v, t.flags = %d\n", t.dest, t.flags)
-		fmt.Printf("Debug connTasks: range s.connTasks done: %v\n", t.done)
+		debugf("range connTasks: t.dest = %v, t.flags = %d\n", t.dest, t.flags)
+		debugf("Debug connTasks: range s.connTasks done: %v\n", t.done)
 		err := s.checkDial(t.dest, peers)
 		switch err {
 		case errNotWhitelisted, errSelf:
-			fmt.Printf("Debug connTasks: popConnTasks before t.done\n")
+			debugf("Debug connTasks: popConnTasks before t.done\n")
 			t.done <- err
-			fmt.Printf("Debug connTasks: popConnTasks after t.done\n")
+			debugf("Debug connTasks: popConnTasks after t.done\n")
 
 			log.Warn("Removing connTasks dial candidate", "id", t.dest.ID, "addr", &net.TCPAddr{IP: t.dest.IP, Port: int(t.dest.TCP)}, "err", err)
 		case nil:
 			newtasks = append(newtasks, t)
-			fmt.Printf("popConnTasks: append %v\n", newtasks)
+			debugf("popConnTasks: append %v\n", newtasks)
 		default:
 		    t.done <- err
 		}
 	}
-	fmt.Printf("popConnTasks: return %v\n", newtasks)
+	debugf("popConnTasks: return %v\n", newtasks)
 	return newtasks
 }
 
@@ -367,7 +367,7 @@ func (s *dialstate) checkDial(n *discover.Node, peers map[discover.NodeID]*Peer)
 	case s.netrestrict != nil && !s.netrestrict.Contains(n.IP):
 		return errNotWhitelisted
 	case s.hist.contains(n.ID):
-		fmt.Printf("checkDial: s.hist: %v\n", *s.hist)
+		debugf("checkDial: s.hist: %v\n", *s.hist)
 		return errRecentlyDialed
 	}
 	return nil
@@ -387,12 +387,12 @@ func (s *dialstate) taskDone(t task, now time.Time) {
 }
 
 func (t *dialTask) Do(srv *Server) {
-	fmt.Printf("Debug connTasks: before Do t.done: %v %v \n", t.dest.ID, t.done)
+	debugf("Debug connTasks: before Do t.done: %v %v \n", t.dest.ID, t.done)
 	if t.dest.Incomplete() {
 		if !t.resolve(srv) {
-			fmt.Printf("Debug connTasks: before Resolve failed: %v %v\n", t.dest.ID, t.done)
+			debugf("Debug connTasks: before Resolve failed: %v %v\n", t.dest.ID, t.done)
 			if t.done != nil {
-				fmt.Printf("Debug connTasks: Resolve failed: %v %v\n", t.dest.ID, t.done)
+				debugf("Debug connTasks: Resolve failed: %v %v\n", t.dest.ID, t.done)
 				t.done <- errors.New("Resolve failed: " + t.dest.ID.String())
 			}
 			return
@@ -400,7 +400,7 @@ func (t *dialTask) Do(srv *Server) {
 	}
 	err := t.dial(srv, t.dest)
 	if err != nil {
-		fmt.Printf("Dial error task %v err %v t.flags===>%d\n", t, err, t.flags)
+		debugf("Dial error task %v err %v t.flags===>%d\n", t, err, t.flags)
 		log.Trace("Dial error", "task", t, "err", err)
 		// Try resolving the ID of static nodes if dialing failed.
 		if _, ok := err.(*dialError); ok && ((t.flags&staticDialedConn != 0) || (t.flags&privilegedDialedConn != 0)) {
@@ -410,10 +410,10 @@ func (t *dialTask) Do(srv *Server) {
 		}
 	}
 	if t.done != nil {
-		fmt.Printf("Debug connTasks: before t.done\n")
+		debugf("Debug connTasks: before t.done\n")
 		t.done <- err
 	}
-	fmt.Printf("Debug connTasks: after Do t.done %v %v:\n", t.dest.ID, t.done)
+	debugf("Debug connTasks: after Do t.done %v %v:\n", t.dest.ID, t.done)
 }
 
 // resolve attempts to find the current endpoint for the destination
@@ -461,7 +461,7 @@ func (t *dialTask) dial(srv *Server, dest *discover.Node) error {
 		return &dialError{err}
 	}
 	mfd := newMeteredConn(fd, false)
-	fmt.Printf("417 dial t.flags =====> %d\n", t.flags)
+	debugf("417 dial t.flags =====> %d\n", t.flags)
 	return srv.SetupConn(mfd, t.flags, dest)
 }
 

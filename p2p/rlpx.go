@@ -180,10 +180,10 @@ func (t *rlpx) doCheckIgnoreMaxPeer(dial *discover.Node, c *conn) (*conn, error)
 	} else {
 		// dial connection
 		if c.flags == privilegedDialedConn {
-			fmt.Printf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
+			debugf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
 			go func() { werr <- Send(t.rw, isIgnoreMaxPeer, true) }()
 		} else {
-			fmt.Printf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
+			debugf("Send msg.code = %d  msg.data = %v\n", isIgnoreMaxPeer, true)
 			go func() { werr <- Send(t.rw, isIgnoreMaxPeer, false) }()
 		}
 		if err := <-werr; err != nil {
@@ -215,7 +215,7 @@ func readCheckIgnoreMaxPeer(c *conn, rw MsgReader) (*conn, error) {
 	if err := msg.Decode(&imp); err != nil {
 		return c, err
 	}
-	fmt.Printf("return in readCheckIgnoreMaxPeer: imp == %v , c.id = %v\n", imp, c.id)
+	debugf("return in readCheckIgnoreMaxPeer: imp == %v , c.id = %v\n", imp, c.id)
 	if imp {
 		c.flags = inboundPrivilegedDialedConn
 	}
