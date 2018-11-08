@@ -323,7 +323,10 @@ func (srv *Server) AddPrivileged(node *discover.Node) {
 }
 
 // Connect connects to the given node but don't maintain the connection
-func (srv *Server) Connect(node *discover.Node) error {
+func (srv *Server) Connect(nodeID discover.NodeID) error {
+	node := &discover.Node{
+		ID: nodeID,
+	}
 	fmt.Printf("Debug connTasks: Now connect to %s\n", node.ID)
 
 	peers := srv.Peers()
