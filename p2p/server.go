@@ -322,6 +322,10 @@ func (srv *Server) AddPrivileged(node *discover.Node) {
 	}
 }
 
+var (
+	AlreadyConnected             = errors.New("already connected")
+)
+
 // Connect connects to the given node but don't maintain the connection
 func (srv *Server) Connect(nodeID discover.NodeID) error {
 	node := &discover.Node{
@@ -332,7 +336,7 @@ func (srv *Server) Connect(nodeID discover.NodeID) error {
 	peers := srv.Peers()
 	for _, p := range peers {
 		if p.ID() == node.ID {
-			return nil
+			return AlreadyConnected
 		}
 	}
 
