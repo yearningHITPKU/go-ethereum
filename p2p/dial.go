@@ -367,7 +367,12 @@ func (s *dialstate) checkDial(n *discover.Node, peers map[discover.NodeID]*Peer)
 	case s.netrestrict != nil && !s.netrestrict.Contains(n.IP):
 		return errNotWhitelisted
 	case s.hist.contains(n.ID):
-		debugf("checkDial: s.hist: %v\n", *s.hist)
+		for _, v := range s.connTasks {
+			if v.dest.ID == n.ID && v.flags == privilegedDialedConn {
+				return nil
+			}
+		}
+		fmt.Printf("checkDial: contains %v %v\n", n.ID, n.IP)
 		return errRecentlyDialed
 	}
 	return nil
@@ -377,6 +382,7 @@ func (s *dialstate) taskDone(t task, now time.Time) {
 	switch t := t.(type) {
 	case *dialTask:
 		if t.flags != privilegedDialedConn {
+			fmt.Printf("t.flags = %v, IP = %v, ID = %v\n", t.flags, t.dest.IP, t.dest.ID )
 			s.hist.add(t.dest.ID, now.Add(dialHistoryExpiration))
 		}
 		delete(s.dialing, t.dest.ID)

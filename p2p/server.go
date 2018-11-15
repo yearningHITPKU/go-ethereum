@@ -323,7 +323,7 @@ func (srv *Server) AddPrivileged(node *discover.Node) {
 }
 
 var (
-	AlreadyConnected             = errors.New("already connected")
+	AlreadyConnected = errors.New("already connected")
 )
 
 // Connect connects to the given node but don't maintain the connection
