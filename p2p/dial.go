@@ -372,7 +372,7 @@ func (s *dialstate) checkDial(n *discover.Node, peers map[discover.NodeID]*Peer)
 				return nil
 			}
 		}
-		fmt.Printf("checkDial: contains %v %v\n", n.ID, n.IP)
+		debugf("checkDial: contains %v %v\n", n.ID, n.IP)
 		return errRecentlyDialed
 	}
 	return nil
@@ -382,7 +382,7 @@ func (s *dialstate) taskDone(t task, now time.Time) {
 	switch t := t.(type) {
 	case *dialTask:
 		if t.flags != privilegedDialedConn {
-			fmt.Printf("t.flags = %v, IP = %v, ID = %v\n", t.flags, t.dest.IP, t.dest.ID )
+			debugf("t.flags = %v, IP = %v, ID = %v\n", t.flags, t.dest.IP, t.dest.ID )
 			s.hist.add(t.dest.ID, now.Add(dialHistoryExpiration))
 		}
 		delete(s.dialing, t.dest.ID)
