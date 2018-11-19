@@ -43,10 +43,10 @@ const (
 
 const (
 	// devp2p message codes
-	handshakeMsg = 0x00
-	discMsg      = 0x01
-	pingMsg      = 0x02
-	pongMsg      = 0x03
+	handshakeMsg    = 0x00
+	discMsg         = 0x01
+	pingMsg         = 0x02
+	pongMsg         = 0x03
 	isIgnoreMaxPeer = 0x04
 )
 
@@ -120,11 +120,11 @@ func NewPeer(id discover.NodeID, name string, caps []Cap) *Peer {
 }
 
 func (p *Peer) IsPriDialedConn() bool {
-	return 	p.rw.is(privilegedDialedConn)
+	return p.rw.is(privilegedDialedConn)
 }
 
 func (p *Peer) IsInboundPriDialedConn() bool {
-	return 	p.rw.is(inboundPrivilegedDialedConn)
+	return p.rw.is(inboundPrivilegedDialedConn)
 }
 
 // ID returns the node's public key.
@@ -424,11 +424,13 @@ type PeerInfo struct {
 	Name    string   `json:"name"` // Name of the node, including client type, version, OS, custom data
 	Caps    []string `json:"caps"` // Sum-protocols advertised by this particular peer
 	Network struct {
-		LocalAddress  string `json:"localAddress"`  // Local endpoint of the TCP data connection
-		RemoteAddress string `json:"remoteAddress"` // Remote endpoint of the TCP data connection
-		Inbound       bool   `json:"inbound"`
-		Trusted       bool   `json:"trusted"`
-		Static        bool   `json:"static"`
+		LocalAddress                string `json:"localAddress"`  // Local endpoint of the TCP data connection
+		RemoteAddress               string `json:"remoteAddress"` // Remote endpoint of the TCP data connection
+		Inbound                     bool   `json:"inbound"`
+		Trusted                     bool   `json:"trusted"`
+		Static                      bool   `json:"static"`
+		Privilage                   bool   `json:"privilage"`
+		InboundPrivilegedDialedConn bool   `json:"inboundPrivilegedDialedConn"`
 	} `json:"network"`
 	Protocols map[string]interface{} `json:"protocols"` // Sub-protocol specific metadata fields
 }
@@ -452,6 +454,8 @@ func (p *Peer) Info() *PeerInfo {
 	info.Network.Inbound = p.rw.is(inboundConn)
 	info.Network.Trusted = p.rw.is(trustedConn)
 	info.Network.Static = p.rw.is(staticDialedConn)
+	info.Network.Privilage = p.rw.is(privilegedDialedConn)
+	info.Network.InboundPrivilegedDialedConn = p.rw.is(inboundPrivilegedDialedConn)
 
 	// Gather all the running protocol infos
 	for _, proto := range p.running {

@@ -111,7 +111,7 @@ type Config struct {
 	NodeDatabase string `toml:",omitempty"`
 
 	// Protocols should contain the protocols supported
-	// by the server. Matching protocols are launched for
+	// by the server. Matching protocols are launched forWriteMsg
 	// each peer.
 	Protocols []Protocol `toml:"-"`
 
@@ -182,11 +182,6 @@ type Server struct {
 	peerFeed      event.Feed
 	log           log.Logger
 }
-
-//type connect struct {
-//node    *discover.Node
-//done chan error
-//}
 
 type peerOpFunc func(map[discover.NodeID]*Peer)
 
@@ -324,6 +319,8 @@ func (srv *Server) AddPrivileged(node *discover.Node) {
 
 var (
 	AlreadyConnected = errAlreadyConnected
+	AlreadyDialing   = errAlreadyDialing
+	ErrSelf          = errSelf
 )
 
 // Connect connects to the given node but don't maintain the connection
