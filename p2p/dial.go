@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/yearningHITPKU/go-ethereum/log"
@@ -79,9 +80,10 @@ type dialstate struct {
 	randomNodes   []*discover.Node // filled from Table
 	static        map[discover.NodeID]*dialTask
 	privileged    map[discover.NodeID]*dialTask
-	DialDoneSign  map[discover.NodeID]chan struct{}
-	connTasks     []*dialTask
-	hist          *dialHistory
+	//DialDoneSign  map[discover.NodeID]chan struct{}
+	DialDoneSign *sync.Map
+	connTasks    []*dialTask
+	hist         *dialHistory
 
 	start     time.Time        // time when the dialer was first used
 	bootnodes []*discover.Node // default dials when there are no peers
@@ -203,7 +205,7 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		}
 		s.dialing[n.ID] = flag
 		newtasks = append(newtasks, &dialTask{flags: flag, dest: n})
-		s.DialDoneSign[n.ID] = make(chan struct{})
+		s.DialDoneSign.Store(n.ID, make(chan struct{}))
 		debugln("addDial newtasks: ", newtasks)
 		return true
 	}
@@ -260,7 +262,8 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		case nil:
 			s.dialing[id] = t.flags
 			newtasks = append(newtasks, t)
-			s.DialDoneSign[id] = make(chan struct{})
+			//s.DialDoneSign[id] = make(chan struct{})
+			s.DialDoneSign.Store(id, make(chan struct{}))
 		}
 	}
 	// If we don't have any peers whatsoever, try to dial a random bootnode. This
@@ -343,7 +346,7 @@ func (s *dialstate) popConnTasks(peers map[discover.NodeID]*Peer) []task {
 			newtasks = append(newtasks, t)
 			debugf("popConnTasks: append %v\n", newtasks)
 		default:
-		    t.done <- err
+			t.done <- err
 		}
 	}
 	debugf("popConnTasks: return %v\n", newtasks)
@@ -385,13 +388,19 @@ func (s *dialstate) taskDone(t task, now time.Time) {
 	switch t := t.(type) {
 	case *dialTask:
 		if t.flags != privilegedDialedConn {
-			debugf("t.flags = %v, IP = %v, ID = %v\n", t.flags, t.dest.IP, t.dest.ID )
+			debugf("t.flags = %v, IP = %v, ID = %v\n", t.flags, t.dest.IP, t.dest.ID)
 			s.hist.add(t.dest.ID, now.Add(dialHistoryExpiration))
 		}
 		delete(s.dialing, t.dest.ID)
-		if c := s.DialDoneSign[t.dest.ID]; c != nil {
-			close(s.DialDoneSign[t.dest.ID])
-			delete(s.DialDoneSign, t.dest.ID)
+		//if c := s.DialDoneSign[t.dest.ID]; c != nil {
+		//	close(s.DialDoneSign[t.dest.ID])
+		//	delete(s.DialDoneSign, t.dest.ID)
+		//}
+		if c, ok := s.DialDoneSign.Load(t.dest.ID); c != nil && ok {
+			if v, ok := c.(chan struct{}); ok {
+				close(v)
+			}
+			s.DialDoneSign.Delete(t.dest.ID)
 		}
 	case *discoverTask:
 		s.lookupRunning = false

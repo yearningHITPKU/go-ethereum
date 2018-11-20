@@ -182,7 +182,8 @@ type Server struct {
 	peerFeed      event.Feed
 	log           log.Logger
 
-	DialDone map[discover.NodeID]chan struct{}
+	//DialDone map[discover.NodeID]chan struct{}
+	DialDone sync.Map
 }
 
 type peerOpFunc func(map[discover.NodeID]*Peer)
@@ -499,7 +500,8 @@ func (srv *Server) Start() (err error) {
 		node *discover.Node
 		done chan error
 	})
-	srv.DialDone = make(map[discover.NodeID]chan struct{})
+	//srv.DialDone = make(map[discover.NodeID]chan struct{})
+	srv.DialDone = sync.Map{}
 
 	var (
 		conn      *net.UDPConn
@@ -573,7 +575,7 @@ func (srv *Server) Start() (err error) {
 	dynPeers := srv.maxDialedConns()
 	debugln("server.go 486: dynPeers ====> ", dynPeers)
 	dialer := newDialState(srv.StaticNodes, srv.BootstrapNodes, srv.ntab, dynPeers, srv.NetRestrict)
-	dialer.DialDoneSign = srv.DialDone
+	dialer.DialDoneSign = &srv.DialDone
 
 	// handshake
 	srv.ourHandshake = &protoHandshake{Version: baseProtocolVersion, Name: srv.Name, ID: discover.PubkeyID(&srv.PrivateKey.PublicKey)}
