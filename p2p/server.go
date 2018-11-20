@@ -181,6 +181,8 @@ type Server struct {
 	loopWG        sync.WaitGroup // loop, listenLoop
 	peerFeed      event.Feed
 	log           log.Logger
+
+	DialDone map[discover.NodeID]chan struct{}
 }
 
 type peerOpFunc func(map[discover.NodeID]*Peer)
@@ -497,6 +499,7 @@ func (srv *Server) Start() (err error) {
 		node *discover.Node
 		done chan error
 	})
+	srv.DialDone = make(map[discover.NodeID]chan struct{})
 
 	var (
 		conn      *net.UDPConn
@@ -570,6 +573,7 @@ func (srv *Server) Start() (err error) {
 	dynPeers := srv.maxDialedConns()
 	debugln("server.go 486: dynPeers ====> ", dynPeers)
 	dialer := newDialState(srv.StaticNodes, srv.BootstrapNodes, srv.ntab, dynPeers, srv.NetRestrict)
+	dialer.DialDoneSign = srv.DialDone
 
 	// handshake
 	srv.ourHandshake = &protoHandshake{Version: baseProtocolVersion, Name: srv.Name, ID: discover.PubkeyID(&srv.PrivateKey.PublicKey)}
@@ -661,7 +665,10 @@ func (srv *Server) run(dialstate dialer) {
 			if ok {
 				debugf("Debug connTasks: in schedule: done: %v\n", t_.done)
 			}
-			go func() { t.Do(srv); taskdone <- t }()
+			go func() {
+				t.Do(srv)
+				taskdone <- t
+			}()
 			runningTasks = append(runningTasks, t)
 		}
 		return ts[i:]

@@ -79,6 +79,7 @@ type dialstate struct {
 	randomNodes   []*discover.Node // filled from Table
 	static        map[discover.NodeID]*dialTask
 	privileged    map[discover.NodeID]*dialTask
+	DialDoneSign  map[discover.NodeID]chan struct{}
 	connTasks     []*dialTask
 	hist          *dialHistory
 
@@ -202,6 +203,7 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		}
 		s.dialing[n.ID] = flag
 		newtasks = append(newtasks, &dialTask{flags: flag, dest: n})
+		s.DialDoneSign[n.ID] = make(chan struct{})
 		debugln("addDial newtasks: ", newtasks)
 		return true
 	}
@@ -258,6 +260,7 @@ func (s *dialstate) newTasks(nRunning int, peers map[discover.NodeID]*Peer, now 
 		case nil:
 			s.dialing[id] = t.flags
 			newtasks = append(newtasks, t)
+			s.DialDoneSign[id] = make(chan struct{})
 		}
 	}
 	// If we don't have any peers whatsoever, try to dial a random bootnode. This
@@ -386,6 +389,10 @@ func (s *dialstate) taskDone(t task, now time.Time) {
 			s.hist.add(t.dest.ID, now.Add(dialHistoryExpiration))
 		}
 		delete(s.dialing, t.dest.ID)
+		if c := s.DialDoneSign[t.dest.ID]; c != nil {
+			close(s.DialDoneSign[t.dest.ID])
+			delete(s.DialDoneSign, t.dest.ID)
+		}
 	case *discoverTask:
 		s.lookupRunning = false
 		s.lookupBuf = append(s.lookupBuf, t.results...)
