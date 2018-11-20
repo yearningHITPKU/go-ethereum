@@ -356,7 +356,7 @@ func (s *dialstate) popConnTasks(peers map[discover.NodeID]*Peer) []task {
 var (
 	errSelf             = errors.New("is self")
 	errAlreadyDialing   = errors.New("already dialing")
-	errAlreadyConnected = errors.New("already connected")
+	errAlreadyConnected = errors.New("already connected 666666666666666666666666666")
 	errRecentlyDialed   = errors.New("recently dialed")
 	errNotWhitelisted   = errors.New("not contained in netrestrict whitelist")
 )
